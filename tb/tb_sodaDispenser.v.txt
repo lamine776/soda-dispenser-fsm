@@ -1,0 +1,191 @@
+`timescale 1ns / 1ps
+
+module tb_sodaDispenser();
+    /*
+    The TB assumes an FSM module with the following interface:
+    ---------------------------------------------------------
+    module sodaDispenser(
+        input clk, rst, n, d, q,
+        output reg dispense, return5, return10, return2_10
+    );
+    ---------------------------------------------------------
+    */
+
+    // Part 1: Signal declarations
+    reg clk = 0;
+    reg rst, n, d, q;
+    wire dispense, return5, return10, return2_10;
+
+    // Part 2: Instantiate the Design-Under-Test
+    sodaDispenser DUT (
+        .clk(clk),
+        .rst(rst),
+        .n(n),
+        .d(d),
+        .q(q),
+        .dispense(dispense),
+        .return5(return5),
+        .return10(return10),
+        .return2_10(return2_10)
+    );
+
+    // Part 3: Clock generation (100 MHz = 10 ns period)
+    integer CLK_PERIOD = 10;
+    always #(CLK_PERIOD/2) clk = ~clk;
+
+    // Part 4: Utility tasks
+    task initialize_inputs();
+        begin
+            rst = 0;
+            n = 0;
+            d = 0;
+            q = 0;
+        end
+    endtask
+
+    task apply_reset();
+        begin
+            @(negedge clk);
+            rst = 1;
+            @(negedge clk);
+            @(negedge clk);
+            @(negedge clk);
+            rst = 0;
+        end
+    endtask
+
+    // apply_stimulus(nickel, dime, quarter)
+    task apply_stimulus(input integer value_n, value_d, value_q);
+        begin
+            @(negedge clk);
+            n = value_n;
+            d = value_d;
+            q = value_q;
+        end
+    endtask
+
+    task assert_expected_output(
+        input integer exp_dispense, exp_return5, exp_return10, exp_return2_10
+    );
+        begin
+            // Check at posedge (after state update with the inputs)
+            @(posedge clk);
+            // Check after state has updated on posedge
+            if (dispense   == exp_dispense   &&
+                return5    == exp_return5    &&
+                return10   == exp_return10   &&
+                return2_10 == exp_return2_10)
+                $display("  PASSED");
+            else begin
+                $display("  FAILED!");
+                $display("    dispense:   got=%0b expected=%0b", dispense,   exp_dispense);
+                $display("    return5:    got=%0b expected=%0b", return5,    exp_return5);
+                $display("    return10:   got=%0b expected=%0b", return10,   exp_return10);
+                $display("    return2_10: got=%0b expected=%0b", return2_10, exp_return2_10);
+                $finish();
+            end
+        end
+    endtask
+
+    task clear_inputs();
+        begin
+            // Clear inputs immediately (before next stimulus)
+            n = 0; d = 0; q = 0;
+        end
+    endtask
+
+    // Part 5: Test stimulus
+    initial begin
+        @(negedge clk);  // Wait for first negedge to let clock stabilize
+        initialize_inputs();
+        apply_reset();
+
+        // ----- Test 1: Quarter only = 25c exact -----
+        $display("TEST 1: q = 25c (exact, no change)");
+        apply_stimulus(0, 0, 1);                   // insert quarter
+        assert_expected_output(1, 0, 0, 0);         // dispense, no change
+        clear_inputs();
+
+        // ----- Test 2: Nickel + Dime + Quarter = 40c -----
+        $display("TEST 2: n + d + q = 40c (change = 15c)");
+        apply_stimulus(1, 0, 0);                   // insert nickel  (5c)
+        apply_stimulus(0, 1, 0);                   // insert dime   (15c)
+        apply_stimulus(0, 0, 1);                   // insert quarter (40c)
+        assert_expected_output(1, 1, 1, 0);         // dispense, return 5+10=15c
+        clear_inputs();
+
+        // ----- Test 3: Three dimes = 30c -----
+        $display("TEST 3: d + d + d = 30c (change = 5c)");
+        apply_stimulus(0, 1, 0);                   // 10c
+        apply_stimulus(0, 1, 0);                   // 20c
+        apply_stimulus(0, 1, 0);                   // 30c
+        assert_expected_output(1, 1, 0, 0);         // dispense, return 5c
+        clear_inputs();
+
+        // ----- Test 4: Five nickels = 25c -----
+        $display("TEST 4: n + n + n + n + n = 25c (exact)");
+        apply_stimulus(1, 0, 0);                   // 5c
+        apply_stimulus(1, 0, 0);                   // 10c
+        apply_stimulus(1, 0, 0);                   // 15c
+        apply_stimulus(1, 0, 0);                   // 20c
+        apply_stimulus(1, 0, 0);                   // 25c
+        assert_expected_output(1, 0, 0, 0);         // dispense, no change
+        clear_inputs();
+
+        // ----- Test 5: Dime + Quarter = 35c -----
+        $display("TEST 5: d + q = 35c (change = 10c)");
+        apply_stimulus(0, 1, 0);                   // 10c
+        apply_stimulus(0, 0, 1);                   // 35c
+        assert_expected_output(1, 0, 1, 0);         // dispense, return 10c
+        clear_inputs();
+
+        // ----- Test 6: Four nickels + Quarter = 45c -----
+        $display("TEST 6: n + n + n + n + q = 45c (change = 20c)");
+        apply_stimulus(1, 0, 0);                   // 5c
+        apply_stimulus(1, 0, 0);                   // 10c
+        apply_stimulus(1, 0, 0);                   // 15c
+        apply_stimulus(1, 0, 0);                   // 20c
+        apply_stimulus(0, 0, 1);                   // 45c
+        assert_expected_output(1, 0, 0, 1);         // dispense, return 2x10c
+        clear_inputs();
+
+        // ----- Test 7: Nickel + Quarter = 30c -----
+        $display("TEST 7: n + q = 30c (change = 5c)");
+        apply_stimulus(1, 0, 0);                   // 5c
+        apply_stimulus(0, 0, 1);                   // 30c
+        assert_expected_output(1, 1, 0, 0);         // dispense, return 5c
+        clear_inputs();
+
+        // ----- Test 8: Two dimes + nickel + dime = 35c -----
+        $display("TEST 8: d + d + n + d = 35c (change = 10c)");
+        apply_stimulus(0, 1, 0);                   // 10c
+        apply_stimulus(0, 1, 0);                   // 20c
+        apply_stimulus(1, 0, 0);                   // 25c
+        assert_expected_output(1, 0, 0, 0);         // dispense at exactly 25c
+        clear_inputs();
+
+        // ----- Test 9: Nickel + Dime + Nickel + Dime = 30c -----
+        $display("TEST 9: n + d + n + d = 30c (change = 5c)");
+        apply_stimulus(1, 0, 0);                   // 5c
+        apply_stimulus(0, 1, 0);                   // 15c
+        apply_stimulus(1, 0, 0);                   // 20c
+        apply_stimulus(0, 1, 0);                   // 30c
+        assert_expected_output(1, 1, 0, 0);         // dispense, return 5c
+        clear_inputs();
+
+        // ----- Test 10: Nickel + Nickel + Dime + Quarter = 45c -----
+        $display("TEST 10: n + n + d + q = 45c (change = 20c)");
+        apply_stimulus(1, 0, 0);                   // 5c
+        apply_stimulus(1, 0, 0);                   // 10c
+        apply_stimulus(0, 1, 0);                   // 20c
+        apply_stimulus(0, 0, 1);                   // 45c
+        assert_expected_output(1, 0, 0, 1);         // dispense, return 2x10c
+        clear_inputs();
+
+        @(negedge clk);
+        $display("========================");
+        $display("  ALL 10 TESTS PASSED");
+        $display("========================");
+        $finish();
+    end
+endmodule

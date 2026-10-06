@@ -1,0 +1,114 @@
+module sodaDispenser(
+    input clk, rst,
+    input n, d, q,
+    output reg dispense,
+    output reg return5,
+    output reg return10,
+    output reg return2_10
+);
+    // State encoding
+    parameter S0  = 3'b000;
+    parameter S5  = 3'b001;
+    parameter S10 = 3'b010;
+    parameter S15 = 3'b011;
+    parameter S20 = 3'b100;
+
+    reg [2:0] state_reg, state_next;
+
+    // =============================
+    // Block 1: State register
+    // =============================
+    always @(posedge clk) begin
+        if (rst)
+            state_reg <= S0;
+        else
+            state_reg <= state_next;
+    end
+
+    // =============================
+    // Block 2: Next-state logic
+    // =============================
+    always @(*) begin
+        state_next = state_reg;
+        case (state_reg)
+            S0: begin
+                if (n)       state_next = S5;
+                else if (d)  state_next = S10;
+                else if (q)  state_next = S0;
+            end
+            S5: begin
+                if (n)       state_next = S10;
+                else if (d)  state_next = S15;
+                else if (q)  state_next = S0;
+            end
+            S10: begin
+                if (n)       state_next = S15;
+                else if (d)  state_next = S20;
+                else if (q)  state_next = S0;
+            end
+            S15: begin
+                if (n)       state_next = S20;
+                else if (d)  state_next = S0;
+                else if (q)  state_next = S0;
+            end
+            S20: begin
+                if (n)       state_next = S0;
+                else if (d)  state_next = S0;
+                else if (q)  state_next = S0;
+            end
+            default: state_next = S0;
+        endcase
+    end
+
+    // =============================
+    // Block 3: Output logic (Mealy)
+    // =============================
+    always @(*) begin
+        // default outputs
+        dispense   = 0;
+        return5    = 0;
+        return10   = 0;
+        return2_10 = 0;
+
+        case (state_reg)
+            S0: begin
+                if (q) dispense = 1;
+            end
+            S5: begin
+                if (q) begin
+                    dispense = 1;
+                    return5  = 1;
+                end
+            end
+            S10: begin
+                if (q) begin
+                    dispense = 1;
+                    return10 = 1;
+                end
+            end
+            S15: begin
+                if (d) begin
+                    dispense = 1;
+                end
+                else if (q) begin
+                    dispense = 1;
+                    return5  = 1;
+                    return10 = 1;
+                end
+            end
+            S20: begin
+                if (n) begin
+                    dispense = 1;
+                end
+                else if (d) begin
+                    dispense = 1;
+                    return5  = 1;
+                end
+                else if (q) begin
+                    dispense   = 1;
+                    return2_10 = 1;
+                end
+            end
+        endcase
+    end
+endmodule

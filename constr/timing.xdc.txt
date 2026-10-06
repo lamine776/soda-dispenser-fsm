@@ -1,0 +1,5 @@
+
+# Create a clock constraint on the 'clk' port.
+# The period is in nanoseconds.
+# 10 ns period = 100 MHz target frequency
+create_clock -period 10.000 -name sys_clk [get_ports clk]
